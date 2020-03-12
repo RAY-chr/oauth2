@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chr.mybatisplus.mapper.RentLogMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.chr.mybatisplus.entity.RentLog">
+        <id column="rent_id" property="rentId" />
+        <result column="renter_id" property="renterId" />
+        <result column="book_id" property="bookId" />
+        <result column="book_date" property="bookDate" />
+        <result column="batch_no" property="batchNo" />
+        <result column="log_state" property="logState" />
+    </resultMap>
+
+</mapper>
