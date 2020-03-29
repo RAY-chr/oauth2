@@ -68,17 +68,8 @@ public class BookController {
      */
     @RequestMapping("borrowed/{bookId}")
     public String borrow(@PathVariable Integer bookId , HttpSession session){
-        bookService.update(new UpdateWrapper<Book>()
-                        .eq("book_id",bookId)
-                        .set("book_state","1"));
-        RentLog log = new RentLog();
-        log.setBookId(String.valueOf(bookId));
-        Renter renter = renterService.getOne(new QueryWrapper<Renter>()
-                .eq("renter_name", session.getAttribute("user")));
-        log.setRenterId(String.valueOf(renter.getRenterId()));
-        log.setLogState("0");
-        log.setBookDate(LocalDate.now());
-        logService.save(log);
+        //控制器中调用多个service的时候，最好把多个写到一个service里面，方便事务回滚
+        bookService.borrow(bookId,session.getAttribute("user").toString());
         return "redirect:/book";
     }
 

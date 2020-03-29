@@ -233,20 +233,16 @@ public class AuthUserController {
         if (clientId != null && !clientId.equals("all")) {
             List<AuthUser> client_id = userService.list(new QueryWrapper<AuthUser>()
                     .eq("client_id", clientId));
-            List<AuthUser> collect = client_id.stream().map(x -> {
-                x.setClientId(redisUtils.get("CLIENT:"+x.getClientId()));
-                return x;
-            }).collect(Collectors.toList());
+            List<AuthUser> collect = client_id.stream()
+                    .map(this::getCache)
+                    .collect(Collectors.toList());
             model.addAttribute("users", collect);
             return "emp/userlist";
         }
         List<AuthUser> users = userService.list();
         List<AuthUser> authUsers = users.stream()
                 .filter(x -> !x.getUsername().equals("sysadmin"))
-                .map(x -> {
-                    x.setClientId(redisUtils.get("CLIENT:"+x.getClientId()));
-                    return x;
-                })
+                .map(this::getCache)
                 .collect(Collectors.toList());
         model.addAttribute("users", authUsers);
         return "emp/userlist";
@@ -305,13 +301,23 @@ public class AuthUserController {
         List<AuthUser> list = userService.list(new QueryWrapper<AuthUser>()
                 .like("username", username)
                 .ne("username","sysadmin"));
-        List<AuthUser> collect = getData(list, x -> {
+        List<AuthUser> collect = getData(list, /*x -> {
             x.setClientId(redisUtils.get("CLIENT:"+x.getClientId()));
             return x;
-        });
+        }*/this::getCache);
         model.addAttribute("users",collect);
         model.addAttribute("user",username);
         return "emp/userlist";
+    }
+
+    /**
+     * 公共的代码可以抽出来
+     * @param x
+     * @return
+     */
+    public AuthUser getCache(AuthUser x){
+        x.setClientId(redisUtils.get("CLIENT:"+x.getClientId()));
+        return x;
     }
 
 
