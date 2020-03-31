@@ -6,6 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.List;
  * @since 2020/3/29
  */
 @Component
+@Scope("prototype")
 public class HttpServerHandler extends SimpleChannelInboundHandler<TextWebSocketFrame> {
 
     @Autowired

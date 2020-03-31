@@ -11,19 +11,32 @@ import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 
 /**
  * @author RAY
- * @descriptions
+ * @descriptions Netty的Handler必须是多例的
  * @since 2020/3/29
  */
 @Component
 public class HttpServer {
+    /*@Autowired
+    private HttpServerHandler serverHandler;*/
+
+    /**   Autowired默认单例，多例使用需如下
+     * 1、在需要多例调用的类上加@Scope("prototype")
+
+       2、在进行注入时，不能直接使用@Autowired，否则注入的还是单例，需要使用工厂，最简单的是用
+          @Autowired
+          private ObjectFactory<T> objectFactory;
+          对象进行注入（T为你要注入的类），想要使用该多例对象时，用
+          T t = objectFactory.getObject();
+     */
     @Autowired
-    private HttpServerHandler serverHandler;
+    private ObjectFactory<HttpServerHandler> objectFactory;
 
     private static final Logger logger = LoggerFactory.getLogger(HttpServer.class);
 
@@ -61,8 +74,8 @@ public class HttpServer {
                              * 对于websocket来讲，都是以frames进行传输的，不同的数据类型对应的frames也不同
                              */
                             pipeline.addLast(new WebSocketServerProtocolHandler("/ws"));
-                            System.out.println(serverHandler);
-                            pipeline.addLast(serverHandler);
+                            System.out.println(objectFactory.getObject());
+                            pipeline.addLast(objectFactory.getObject());
                         }
                     });  //给workerGroup的 EventLoop对应的管道设置处理器
             logger.info("服务器 is ready");
