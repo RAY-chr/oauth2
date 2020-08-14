@@ -2,6 +2,7 @@ package com.chr.para.controller;
 
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.chr.para.config.SynMap;
 import com.chr.para.curator.CuratorApi;
 import com.chr.para.entity.AuthClient;
@@ -12,6 +13,7 @@ import com.chr.para.service.IAuthUserService;
 import com.chr.para.service.IZookeeperNodeService;
 import com.chr.para.utils.JsonUtils;
 import com.chr.para.utils.RedisUtils;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
@@ -24,6 +26,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -37,11 +42,14 @@ import java.util.stream.Collectors;
  * @since 2020-01-09
  */
 @Controller
-//@RequestMapping("/authUser")
 public class AuthUserController {
 
     private static final String APP_KEY = "56eea6c8e76fc4262a4a2816dfd79c7fd";
-
+    private static ThreadFactory factory = new ThreadFactoryBuilder()
+            .setNameFormat("update-login-%d").build();
+    private static final ScheduledExecutorService executor =
+            Executors.newScheduledThreadPool(1, factory);
+    private static final String wifiAddr = "192.168.2.4";
     @Autowired
     private IAuthUserService userService;
 
@@ -75,6 +83,16 @@ public class AuthUserController {
             return "redirect:/login";
         } else if (rest.getLoginRest() == 0) {
             session.setAttribute("msg", "你的账户已被锁定");
+            boolean wrongTime = (boolean) session.getAttribute("wrongTime");
+            if (wrongTime) {
+                executor.schedule(() -> {
+                    userService.update(new UpdateWrapper<AuthUser>().lambda()
+                            .eq(AuthUser::getId, rest.getId())
+                            .set(AuthUser::getLoginRest, 5));
+                    session.setAttribute("wrongTime", true);
+                }, 30, TimeUnit.SECONDS);
+                session.setAttribute("wrongTime", false);
+            }
             return "redirect:/login";
         } else if (username.equals("sysadmin")) {
             AuthUser one = userService.getOne(new QueryWrapper<AuthUser>()
@@ -84,6 +102,10 @@ public class AuthUserController {
                 request.getSession().setAttribute("userinfo", one);
                 return "redirect:/client";
             }
+            return "redirect:/login";
+        }
+        if ("null".equals(clientId)) {
+            session.setAttribute("msg", "客户端id不存在,不能直接登陆");
             return "redirect:/login";
         }
         AuthUser authUser = userService.getOne(new QueryWrapper<AuthUser>()
@@ -97,19 +119,19 @@ public class AuthUserController {
             String code = request.getRemoteAddr();
             //为了使同一个局域网能访问，将请求地址变为了本机连接的wifi IP地址
             //0:0:0:0:0:0:0:1是本机localhost访问的ip地址，是ipv6的
-            if (code.equals("192.168.31.213")) {
+            if (code.equals(wifiAddr)) {
                 code = "0:0:0:0:0:0:0:1";
             }
             /*String truecode = UUID.randomUUID().toString();
             System.out.println("授权码为："+truecode);*/
             code = getSign(getParamsMap(/*truecode,*/code, clientId, client_secret), client_secret + APP_KEY);
-            System.out.println("签名code为："+code);
+            System.out.println("签名code为：" + code);
             String token = UUID.randomUUID().toString();
             nodeService.save(new ZookeeperNode(code, clientId, redirectUrl, authUser.getId()));
             userService.storeToken(code, token);
             try {
                 SynMap.LOCK.lock();
-                SynMap.put(code,token);
+                SynMap.put(code, token);
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
@@ -135,15 +157,16 @@ public class AuthUserController {
 
     /**
      * 根据节点获取令牌
+     *
      * @param code
      * @return
      */
     @RequestMapping("/code/{code}")
     @ResponseBody
-    public String getByCode(@PathVariable String code){
+    public String getByCode(@PathVariable String code) {
         try {
             String token = CuratorApi.INSTANCE.getTokenByNode(code);
-            if (token==null){
+            if (token == null) {
                 return null;
             }
             return token;
@@ -155,7 +178,7 @@ public class AuthUserController {
 
     @RequestMapping("/deleteCode/{code}")
     @ResponseBody
-    public String deleteCode(@PathVariable String code)throws Exception{
+    public String deleteCode(@PathVariable String code) throws Exception {
         CuratorApi.INSTANCE.deleteBatchNoNode(code);
         return "success";
     }
@@ -289,70 +312,50 @@ public class AuthUserController {
 
     /**
      * 根据用户名查找用户
+     *
      * @param username
      * @param model
      * @return
      */
     @PostMapping("search")
-    public String search(String username,Model model){
-        if (username.length()==0){
+    public String search(String username, Model model) {
+        if (username.length() == 0) {
             return "redirect:/user/all";
         }
         List<AuthUser> list = userService.list(new QueryWrapper<AuthUser>()
                 .like("username", username)
-                .ne("username","sysadmin"));
+                .ne("username", "sysadmin"));
         List<AuthUser> collect = getData(list, /*x -> {
             x.setClientId(redisUtils.get("CLIENT:"+x.getClientId()));
             return x;
         }*/this::getCache);
-        model.addAttribute("users",collect);
-        model.addAttribute("user",username);
+        model.addAttribute("users", collect);
+        model.addAttribute("user", username);
         return "emp/userlist";
     }
 
     /**
      * 公共的代码可以抽出来
+     *
      * @param x
      * @return
      */
-    public AuthUser getCache(AuthUser x){
-        x.setClientId(redisUtils.get("CLIENT:"+x.getClientId()));
+    public AuthUser getCache(AuthUser x) {
+        x.setClientId(redisUtils.get("CLIENT:" + x.getClientId()));
         return x;
     }
 
-
     /**
      * 返回自定义集合
+     *
      * @param list
      * @param fun
      * @param <T>
      * @param <R>
      * @return
      */
-    public static <T,R> List<R> getData(List<T> list, Function<T,R> fun){
+    public static <T, R> List<R> getData(List<T> list, Function<T, R> fun) {
         List<R> collect = list.stream().map(t -> fun.apply(t)).collect(Collectors.toList());
         return collect;
     }
-
-
-
-    public static void main(String[] args) {
-        Map<String, String> map = new HashMap<>();
-        map.put("request", "0:0:0:0:0:0:0:1");
-        map.put("client_id", "mybatisplus");
-        map.put("client_secret", "02c781c9-a1a7-4cfe-8ba1-0ae0e6401116");
-        String sign = getSign(map, "02c781c9-a1a7-4cfe-8ba1-0ae0e6401116" + APP_KEY);
-        System.out.println(sign);
-        List<Integer> list = new ArrayList<>();
-        list.add(1);
-        list.add(2);
-        List<String> data = getData(list, x -> String.valueOf(x) + "fun");
-        System.out.println(data);
-
-        SynMap.put("xxx","111");
-        SynMap.remove("xxx");
-        SynMap.put("xxx","222");
-        System.out.println(SynMap.get("xxx"));
-    }
-
 }
